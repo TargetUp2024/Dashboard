@@ -104,6 +104,3 @@ fig_line = px.area(df_timeline, x='Date', y='counts', template="plotly_white")
 fig_line.update_traces(line_color='#007bff')
 st.plotly_chart(fig_line, use_container_width=True)
 
-# Data Explorer
-with st.expander("🔍 View Raw Database"):
-    st.dataframe(df_filtered, use_container_width=True, hide_index=True)
