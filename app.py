@@ -181,8 +181,9 @@ elif page == "🌐 Google Analytics":
         st.markdown('<div class="today-header">Live Snapshots</div>', unsafe_allow_html=True)
         col_t1, col_t2, col_y1, col_y2 = st.columns(4)
         
-        df_ga_today = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "Aujourd'hui", "Aujourd'hui")
-        df_ga_yest = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "Hier", "Hier")
+        df_ga_today = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "today", "today")
+       df_ga_yest  = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "yesterday", "yesterday")
+
 
         def s_sum(df, col): return pd.to_numeric(df[col]).sum() if not df.empty else 0
 
