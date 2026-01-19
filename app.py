@@ -193,5 +193,5 @@ fig_line.update_traces(line_color='#1f77b4', fillcolor='rgba(31, 119, 180, 0.2)'
 st.plotly_chart(fig_line, use_container_width=True)
 
 # SECTION 6: TABLE
-with st.expander("🔍 View Raw Database"):
-    st.dataframe(df_filtered, use_container_width=True, hide_index=True)
+#with st.expander("🔍 View Raw Database"):
+ #   st.dataframe(df_filtered, use_container_width=True, hide_index=True)
