@@ -3,243 +3,286 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
-from google.analytics.data_v1beta.types import (
-    DateRange, Dimension, Metric, RunReportRequest
-)
+from google.analytics.data_v1beta.types import DateRange, Dimension, Metric, RunReportRequest
 import plotly.express as px
 from datetime import datetime, timedelta
 import requests
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="Executive Intelligence System", page_icon="📈", layout="wide")
+# =====================================================
+# PAGE CONFIG
+# =====================================================
+st.set_page_config(
+    page_title="Executive Intelligence System",
+    page_icon="📈",
+    layout="wide"
+)
 
-# --- CUSTOM CSS ---
+# =====================================================
+# CUSTOM CSS
+# =====================================================
 st.markdown("""
-    <style>
-    .main { background-color: #f8f9fa; }
-    .big-metric-container { padding-top: 0px; margin-bottom: -20px; }
-    .big-metric-value { font-size: 85px !important; font-weight: 800 !important; color: #1f77b4; line-height: 1; margin: 0; }
-    .big-metric-label { font-size: 20px !important; color: #666; text-transform: uppercase; margin-bottom: 5px; }
-    .today-header { font-size: 24px; font-weight: 700; color: #2c3e50; margin-top: 20px; border-left: 5px solid #1f77b4; padding-left: 10px; margin-bottom: 15px; }
-    [data-testid="stMetricValue"] { font-weight: 700; font-size: 32px !important; }
-    .stPlotlyChart { margin-bottom: 40px; }
-    </style>
-    """, unsafe_allow_html=True)
+<style>
+.main { background-color: #f8f9fa; }
+.big-metric-container { padding-top: 0px; margin-bottom: -20px; }
+.big-metric-value { font-size: 85px !important; font-weight: 800 !important; color: #1f77b4; line-height: 1; margin: 0; }
+.big-metric-label { font-size: 20px !important; color: #666; text-transform: uppercase; margin-bottom: 5px; }
+.today-header { font-size: 24px; font-weight: 700; color: #2c3e50; margin-top: 20px; border-left: 5px solid #1f77b4; padding-left: 10px; }
+[data-testid="stMetricValue"] { font-weight: 700; font-size: 32px !important; }
+</style>
+""", unsafe_allow_html=True)
 
-# --- AUTHENTICATION HELPERS ---
-
-@st.cache_resource
-def get_gc_credentials():
-    """Centralized credential handler"""
-    info = st.secrets["gcp_service_account"]
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-        "https://www.googleapis.com/auth/analytics.readonly"
-    ]
-    return Credentials.from_service_account_info(info, scopes=scopes)
-
-def get_gspread_client():
-    return gspread.authorize(get_gc_credentials())
-
+# =====================================================
+# CLIENT INITIALIZATION
+# =====================================================
 def get_ga_client():
-    return BetaAnalyticsDataClient(credentials=get_gc_credentials())
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"])
+    return BetaAnalyticsDataClient(credentials=creds)
 
-# --- DATA FETCHING FUNCTIONS ---
-
+# =====================================================
+# DATA FETCHING
+# =====================================================
 @st.cache_data(ttl=600)
 def get_ao_data():
-    """Fetch AO Data from Google Sheets"""
-    try:
-        client = get_gspread_client()
-        sheet = client.open_by_url(st.secrets["private_gsheet_url"]).sheet1
-        df = pd.DataFrame(sheet.get_all_records())
-        df = df.dropna(subset=['Date', 'Source'])
-        df['Date'] = pd.to_datetime(df['Date']).dt.date
-        df['Nombre'] = pd.to_numeric(df['Nombre'], errors='coerce').fillna(1)
-        return df
-    except Exception as e:
-        st.error(f"Error fetching AO data: {e}")
-        return pd.DataFrame()
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+    )
+    client = gspread.authorize(creds)
+    sheet = client.open_by_url(st.secrets["private_gsheet_url"]).sheet1
+    df = pd.DataFrame(sheet.get_all_records())
+
+    df = df.dropna(subset=["Date", "Source"])
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.date
+    df["Nombre"] = pd.to_numeric(df.get("Nombre", 1), errors="coerce").fillna(1)
+
+    return df
 
 @st.cache_data(ttl=600)
 def get_mail_data():
-    """Fetch Mail Data from Google Sheets"""
-    try:
-        client = get_gspread_client()
-        sheet = client.open_by_url(st.secrets["mail_gsheet_url"]).worksheet("CLUB DIRIGEANTS")
-        df = pd.DataFrame(sheet.get_all_records())
-        if not df.empty:
-            df['Date'] = pd.to_datetime(df['Date']).dt.date
-        return df
-    except Exception as e:
-        st.error(f"Error fetching Mail data: {e}")
-        return pd.DataFrame()
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+    )
+    client = gspread.authorize(creds)
+    sheet = client.open_by_url(st.secrets["mail_gsheet_url"]).worksheet("CLUB DIRIGEANTS")
+    df = pd.DataFrame(sheet.get_all_records())
+
+    if not df.empty:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.date
+
+    return df
 
 def get_mailgun_stats(duration="30d"):
-    """Fetch Stats from Mailgun API"""
     try:
         url = f"https://api.mailgun.net/v3/{st.secrets['MAILGUN_DOMAIN']}/stats/total"
         params = {"event": ["accepted", "opened"], "duration": duration}
-        res = requests.get(url, auth=("api", st.secrets["MAILGUN_API_KEY"]), params=params)
-        if res.status_code == 200:
-            data = res.json()
-            acc = data.get('stats', [{}])[0].get('accepted', {}).get('total', 0)
-            ope = data.get('stats', [{}])[0].get('opened', {}).get('total', 0)
-            rate = (ope / acc * 100) if acc > 0 else 0
+        r = requests.get(
+            url,
+            auth=("api", st.secrets["MAILGUN_API_KEY"]),
+            params=params,
+            timeout=10
+        )
+        if r.status_code == 200:
+            stats = r.json().get("stats", [{}])[0]
+            acc = stats.get("accepted", {}).get("total", 0)
+            ope = stats.get("opened", {}).get("total", 0)
+            rate = (ope / acc * 100) if acc else 0
             return rate, ope
-    except: pass
-    return 0, 0
+    except Exception:
+        pass
+    return 0.0, 0
 
-def run_ga_report(property_id, dimensions, metrics, start_date, end_date="today"):
-    """Fetch Analytics from GA4 API"""
+# =====================================================
+# GA4 REPORT
+# =====================================================
+def run_ga_report(property_id, dimensions, metrics, start_date, end_date):
     client = get_ga_client()
+
     request = RunReportRequest(
         property=f"properties/{property_id}",
         dimensions=[Dimension(name=d) for d in dimensions],
         metrics=[Metric(name=m) for m in metrics],
         date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
     )
-    response = client.run_report(request)
-    output = []
-    for row in response.rows:
-        res = {dimensions[i]: val.value for i, val in enumerate(row.dimension_values)}
-        res.update({metrics[i]: val.value for i, val in enumerate(row.metric_values)})
-        output.append(res)
-    return pd.DataFrame(output)
 
-# --- SIDEBAR NAVIGATION ---
+    response = client.run_report(request)
+    rows = []
+
+    for r in response.rows:
+        row = {}
+        for i, d in enumerate(dimensions):
+            row[d] = r.dimension_values[i].value
+        for i, m in enumerate(metrics):
+            row[m] = r.metric_values[i].value
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+# =====================================================
+# SIDEBAR NAVIGATION
+# =====================================================
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3090/3090116.png", width=80)
 st.sidebar.title("Main Menu")
-page = st.sidebar.selectbox("Go to:", ["🏠 Home", "📊 AO Dashboard", "📧 Mail Tracking", "🌐 Google Analytics"])
 
-# --- PAGE 1: HOME ---
+page = st.sidebar.selectbox(
+    "Go to:",
+    ["🏠 Home", "📊 AO Dashboard", "📧 Mail Tracking", "🌐 Google Analytics"]
+)
+
+# =====================================================
+# HOME
+# =====================================================
 if page == "🏠 Home":
     st.title("AO & Marketing Intelligence System")
-    st.markdown("### Welcome! Use the sidebar to navigate between modules.")
-    st.info("System is connected to Google Sheets, Mailgun, and Google Analytics 4.")
+    st.info("Connected to Google Sheets, Mailgun, and Google Analytics 4.")
 
-# --- PAGE 2: AO DASHBOARD ---
+# =====================================================
+# AO DASHBOARD
+# =====================================================
 elif page == "📊 AO Dashboard":
     df = get_ao_data()
-    if not df.empty:
-        st.sidebar.header("🗓️ AO Filters")
-        min_d, max_d = df['Date'].min(), df['Date'].max()
-        dr_ao = st.sidebar.date_input("Date Range", value=(min_d, max_d))
 
-        # Filter Logic
-        if isinstance(dr_ao, (list, tuple)) and len(dr_ao) == 2:
-            df_f = df[(df["Date"] >= dr_ao[0]) & (df["Date"] <= dr_ao[1])]
-        else:
-            df_f = df
+    st.sidebar.header("🗓️ AO Filters")
+    dr = st.sidebar.date_input(
+        "Date Range",
+        value=(df["Date"].min(), df["Date"].max())
+    )
 
-        st.title("Appel d'Offres (AO) Tracking")
-        st.markdown(f'<div class="big-metric-container"><p class="big-metric-label">Total AO Filtered</p><p class="big-metric-value">{int(df_f["Nombre"].sum())}</p></div>', unsafe_allow_html=True)
-        st.write("---")
+    if isinstance(dr, tuple):
+        df_f = df[(df["Date"] >= dr[0]) & (df["Date"] <= dr[1])]
+    else:
+        df_f = df
 
-        # Today Metrics
-        today_dt = datetime.now().date()
-        df_today = df[df['Date'] == today_dt]
-        st.markdown(f'<div class="today-header">Aujourd\'hui</div>', unsafe_allow_html=True)
-        t1, t2, t3, t4 = st.columns(4)
-        t1.metric("Scrapé", int(df_today["Nombre"].sum()))
-        t2.metric("Accepté", len(df_today[df_today["Status"] == "Accepté"]))
-        t3.metric("Refus", len(df_today[df_today["Status"] == "Refus"]))
-        t4.metric("Opp", len(df_today[df_today["Status"] == "Opportunité"]))
+    st.title("Appel d'Offres Tracking")
 
-        # Visuals
-        st.divider()
-        c1, c2 = st.columns(2)
-        with c1:
-            st.plotly_chart(px.bar(df_f.groupby("Source")["Nombre"].count().reset_index(), x="Nombre", y="Source", orientation='h', title="Source Distribution", template="plotly_white"), use_container_width=True)
-        with c2:
-            st.plotly_chart(px.pie(df_f, names="Status", hole=0.5, title="Status Analysis"), use_container_width=True)
+    st.markdown(
+        f"""
+        <div class="big-metric-container">
+            <p class="big-metric-label">Total AO Filtered</p>
+            <p class="big-metric-value">{int(df_f["Nombre"].sum())}</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-# --- PAGE 3: MAIL TRACKING ---
-elif page == "📧 Mail Tracking":
-    st.title("📧 Mail Tracking Dashboard")
-    df_m = get_mail_data()
-    
-    if not df_m.empty:
-        st.sidebar.header("🗓️ Mail Date Filter")
-        m_range = st.sidebar.date_input("Select Range", value=(df_m['Date'].min(), df_m['Date'].max()))
-        
-        # Today Snapshot
-        today_dt = datetime.now().date()
-        df_m_today = df_m[df_m['Date'] == today_dt]
-        rate_24h, _ = get_mailgun_stats("24h")
-        
-        st.markdown('<div class="today-header">Mailing Aujourd\'hui</div>', unsafe_allow_html=True)
-        mt1, mt2, mt3, mt4 = st.columns(4)
-        mt1.metric("Prospectés", len(df_m_today))
-        
-        # Fix column names if there are trailing spaces
-        sent_col = 'Email Envoyé ' if 'Email Envoyé ' in df_m_today.columns else 'Email Envoyé'
-        resp_col = 'Email Reponse ' if 'Email Reponse ' in df_m_today.columns else 'Email Reponse'
-        
-        mt2.metric("Envoyés", len(df_m_today[df_m_today[sent_col].astype(str).str.contains('Oui', na=False)]))
-        mt3.metric("Open Rate (24h)", f"{rate_24h:.1f}%")
-        mt4.metric("Réponses", len(df_m_today[df_m_today[resp_col].astype(str).str.strip() != ""]))
-
-        st.divider()
-        
-        if isinstance(m_range, (list, tuple)) and len(m_range) == 2:
-            df_m_f = df_m[(df_m['Date'] >= m_range[0]) & (df_m['Date'] <= m_range[1])]
-            st.subheader("Performance Timeline")
-            st.plotly_chart(px.line(df_m_f.groupby('Date').size().reset_index(name='Volume'), x='Date', y='Volume', template="plotly_white"), use_container_width=True)
-
-# --- PAGE 4: GOOGLE ANALYTICS ---
-elif page == "🌐 Google Analytics":
-    st.title("🌐 Website Traffic Intelligence")
-    
-    site = st.sidebar.radio("Select Website:", ["Targetup University", "Targetup Consulting"])
-    pid = st.secrets["GA_PROPERTY_ID_1"] if site == "Targetup University" else st.secrets["GA_PROPERTY_ID_2"]
-    
-    st.sidebar.divider()
     today = datetime.now().date()
-    ga_range = st.sidebar.date_input("Calendar Range", value=(today - timedelta(days=30), today))
+    df_today = df[df["Date"] == today]
 
-    try:
-        # A. LIVE SNAPSHOTS
-        st.markdown('<div class="today-header">Live Snapshots</div>', unsafe_allow_html=True)
-        col_t1, col_t2, col_y1, col_y2 = st.columns(4)
-        
-        df_ga_today = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "today", "today")
-        df_ga_yest  = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "yesterday", "yesterday")
+    st.markdown('<div class="today-header">Aujourd’hui</div>', unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
 
-        def s_sum(df, col): return pd.to_numeric(df[col]).sum() if not df.empty else 0
+    c1.metric("Scrapé", int(df_today["Nombre"].sum()))
+    c2.metric("Accepté", len(df_today[df_today["Status"] == "Accepté"]))
+    c3.metric("Refus", len(df_today[df_today["Status"] == "Refus"]))
+    c4.metric("Opportunité", len(df_today[df_today["Status"] == "Opportunité"]))
 
-        col_t1.metric("Users (Today)", f"{s_sum(df_ga_today, 'activeUsers'):,}")
-        col_t2.metric("Sessions (Today)", f"{s_sum(df_ga_today, 'sessions'):,}")
-        col_y1.metric("Users (Yesterday)", f"{s_sum(df_ga_yest, 'activeUsers'):,}")
-        col_y2.metric("Sessions (Yesterday)", f"{s_sum(df_ga_yest, 'sessions'):,}")
+    st.divider()
 
-        st.divider()
+    col1, col2 = st.columns(2)
 
-        # B. PERIOD PERFORMANCE
-        if isinstance(ga_range, (list, tuple)) and len(ga_range) == 2:
-            s_str, e_str = ga_range[0].strftime("%Y-%m-%d"), ga_range[1].strftime("%Y-%m-%d")
-            df_p = run_ga_report(pid, ["date"], ["activeUsers", "newUsers", "sessions", "engagementRate"], s_str, e_str)
-            
-            if not df_p.empty:
-                t_u = s_sum(df_p, "activeUsers")
-                ret_rate = ((t_u - s_sum(df_p, "newUsers")) / t_u * 100) if t_u > 0 else 0
+    with col1:
+        src = df_f.groupby("Source")["Nombre"].count().reset_index()
+        st.plotly_chart(
+            px.bar(src, x="Nombre", y="Source", orientation="h"),
+            use_container_width=True
+        )
 
-                st.markdown(f'<div class="today-header">Performance: {s_str} to {e_str}</div>', unsafe_allow_html=True)
-                p1, p2, p3, p4 = st.columns(4)
-                p1.metric("Total Users", f"{t_u:,}")
-                p2.metric("Total Sessions", f"{s_sum(df_p, 'sessions'):,}")
-                p3.metric("Engagement Rate", f"{(pd.to_numeric(df_p['engagementRate']).mean()*100):.1f}%")
-                p4.metric("Return Rate", f"{ret_rate:.1f}%")
+    with col2:
+        st.plotly_chart(
+            px.pie(df_f, names="Status", hole=0.5),
+            use_container_width=True
+        )
 
-                st.write("### Users Timeline")
-                df_p["date"] = pd.to_datetime(df_p["date"])
-                st.plotly_chart(px.area(df_p.sort_values("date"), x="date", y="activeUsers", template="plotly_white"), use_container_width=True)
+# =====================================================
+# MAIL TRACKING
+# =====================================================
+elif page == "📧 Mail Tracking":
+    df_m = get_mail_data()
 
-                st.write("### Traffic Sources")
-                df_src = run_ga_report(pid, ["sessionDefaultChannelGroup"], ["sessions"], s_str, e_str)
-                df_src["sessions"] = pd.to_numeric(df_src["sessions"])
-                st.plotly_chart(px.bar(df_src.sort_values("sessions"), x="sessions", y="sessionDefaultChannelGroup", orientation='h', template="plotly_white"), use_container_width=True)
+    st.sidebar.header("🗓️ Mail Filters")
+    dr = st.sidebar.date_input(
+        "Date Range",
+        value=(df_m["Date"].min(), df_m["Date"].max())
+    )
 
-    except Exception as e:
-        st.error(f"GA4 Error: {e}")
+    today = datetime.now().date()
+    df_today = df_m[df_m["Date"] == today]
+    rate_24h, _ = get_mailgun_stats("24h")
+
+    st.markdown('<div class="today-header">Mailing Aujourd’hui</div>', unsafe_allow_html=True)
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Prospectés", len(df_today))
+    m2.metric("Envoyés", len(df_today[df_today["Email Envoyé "].str.contains("Oui", na=False)]))
+    m3.metric("Open Rate (24h)", f"{rate_24h:.1f}%")
+    m4.metric("Réponses", len(df_today[df_today["Email Reponse "].astype(str).str.strip() != ""]))
+
+    if isinstance(dr, tuple):
+        df_f = df_m[(df_m["Date"] >= dr[0]) & (df_m["Date"] <= dr[1])]
+        timeline = df_f.groupby("Date").size().reset_index(name="Volume")
+        st.plotly_chart(px.line(timeline, x="Date", y="Volume"), use_container_width=True)
+
+# =====================================================
+# GOOGLE ANALYTICS
+# =====================================================
+elif page == "🌐 Google Analytics":
+    st.title("Website Traffic Intelligence")
+
+    site = st.sidebar.radio("Website", ["Targetup University", "Targetup Consulting"])
+    pid = st.secrets["GA_PROPERTY_ID_1"] if site == "Targetup University" else st.secrets["GA_PROPERTY_ID_2"]
+
+    today = datetime.now().date()
+    dr = st.sidebar.date_input(
+        "Date Range",
+        value=(today - timedelta(days=30), today)
+    )
+
+    s_today = today.strftime("%Y-%m-%d")
+    s_yest = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    df_t = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], s_today, s_today)
+    df_y = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], s_yest, s_yest)
+
+    def ssum(df, col):
+        return pd.to_numeric(df[col]).sum() if not df.empty else 0
+
+    st.markdown('<div class="today-header">Live Snapshots</div>', unsafe_allow_html=True)
+    a, b, c, d = st.columns(4)
+
+    a.metric("Users Today", ssum(df_t, "activeUsers"))
+    b.metric("Sessions Today", ssum(df_t, "sessions"))
+    c.metric("Users Yesterday", ssum(df_y, "activeUsers"))
+    d.metric("Sessions Yesterday", ssum(df_y, "sessions"))
+
+    if isinstance(dr, tuple):
+        s, e = dr[0].strftime("%Y-%m-%d"), dr[1].strftime("%Y-%m-%d")
+
+        df_p = run_ga_report(
+            pid,
+            ["date"],
+            ["activeUsers", "newUsers", "sessions", "engagementRate"],
+            s,
+            e
+        )
+
+        df_p["date"] = pd.to_datetime(df_p["date"])
+
+        total_users = ssum(df_p, "activeUsers")
+        new_users = ssum(df_p, "newUsers")
+        ret_rate = ((total_users - new_users) / total_users * 100) if total_users else 0
+
+        st.markdown(f'<div class="today-header">Performance {s} → {e}</div>', unsafe_allow_html=True)
+        p1, p2, p3, p4 = st.columns(4)
+
+        p1.metric("Total Users", total_users)
+        p2.metric("Total Sessions", ssum(df_p, "sessions"))
+        p3.metric("Engagement Rate", f"{pd.to_numeric(df_p['engagementRate']).mean() * 100:.1f}%")
+        p4.metric("Return Rate", f"{ret_rate:.1f}%")
+
+        st.plotly_chart(px.area(df_p, x="date", y="activeUsers"), use_container_width=True)
