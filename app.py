@@ -163,7 +163,20 @@ elif page == "📧 Mail Tracking":
         st.stop()
 
     # --- MAIL METRICS ---
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.metric("Total Contacts", len(df_m))
+    with m2:
+        # Check column "Email Envoyé " (note the space in your sample)
+        envoye = len(df_m[df_m['Email Envoyé '].str.contains('Oui', na=False)])
+        st.metric("Emails Envoyés", envoye)
+    with m3:
+        echoue = len(df_m[df_m['Email Envoyé '].str.contains('Non', na=False)])
+        st.metric("Emails Echoueés", echoue)
+
+    st.divider()
+
+        m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.metric("Total Contacts", len(df_m))
     with m2:
