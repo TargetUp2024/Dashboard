@@ -168,8 +168,8 @@ elif page == "📧 Mail Tracking":
 elif page == "🌐 Google Analytics":
     st.title("🌐 Website Traffic Intelligence")
     
-    site = st.sidebar.radio("Select Website:", ["Website 1", "Website 2"])
-    pid = st.secrets["GA_PROPERTY_ID_1"] if site == "Website 1" else st.secrets["GA_PROPERTY_ID_2"]
+    site = st.sidebar.radio("Select Website:", ["Targetup University", "Targetup Consulting"])
+    pid = st.secrets["GA_PROPERTY_ID_1"] if site == "Targetup University" else st.secrets["GA_PROPERTY_ID_2"]
     
     st.sidebar.divider()
     st.sidebar.header("🗓️ Filter Period")
@@ -181,8 +181,8 @@ elif page == "🌐 Google Analytics":
         st.markdown('<div class="today-header">Live Snapshots</div>', unsafe_allow_html=True)
         col_t1, col_t2, col_y1, col_y2 = st.columns(4)
         
-        df_ga_today = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "today", "today")
-        df_ga_yest = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "yesterday", "yesterday")
+        df_ga_today = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "Aujourd'hui", "Aujourd'hui")
+        df_ga_yest = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "Hier", "Hier")
 
         def s_sum(df, col): return pd.to_numeric(df[col]).sum() if not df.empty else 0
 
@@ -209,22 +209,22 @@ elif page == "🌐 Google Analytics":
             p4.metric("Return Rate", f"{ret_rate:.1f}%")
 
             # FULL WIDTH GRAPHS (ONE PER LINE)
-            st.write("### 📈 Users Timeline")
+            st.write("###  Users Timeline")
             df_p["date"] = pd.to_datetime(df_p["date"])
             st.plotly_chart(px.area(df_p.sort_values("date"), x="date", y="activeUsers", template="plotly_white"), use_container_width=True)
 
-            st.write("### 🌍 Top Countries (Ranked)")
+            st.write("###  Top Countries ")
             df_geo = run_ga_report(pid, ["country"], ["activeUsers"], s_str, e_str)
             df_geo["activeUsers"] = pd.to_numeric(df_geo["activeUsers"])
             fig_geo = px.bar(df_geo.sort_values("activeUsers", ascending=False).head(10), x="country", y="activeUsers", color="activeUsers", template="plotly_white", text_auto=True)
             st.plotly_chart(fig_geo, use_container_width=True)
 
-            st.write("### 🚥 Traffic Sources")
+            st.write("###  Traffic Sources")
             df_src = run_ga_report(pid, ["sessionDefaultChannelGroup"], ["sessions"], s_str, e_str)
             df_src["sessions"] = pd.to_numeric(df_src["sessions"])
             st.plotly_chart(px.bar(df_src.sort_values("sessions"), x="sessions", y="sessionDefaultChannelGroup", orientation='h', template="plotly_white"), use_container_width=True)
 
-            st.write("### 📄 Top 15 Pages (Views)")
+            st.write("### Top 15 Pages (Views)")
             df_pg = run_ga_report(pid, ["pagePath"], ["screenPageViews"], s_str, e_str)
             df_pg["screenPageViews"] = pd.to_numeric(df_pg["screenPageViews"])
             fig_pg = px.bar(df_pg.sort_values("screenPageViews").tail(15), x="screenPageViews", y="pagePath", orientation='h', template="plotly_white", color="screenPageViews")
