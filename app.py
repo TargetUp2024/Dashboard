@@ -68,14 +68,31 @@ def get_ao_data():
 
 @st.cache_data(ttl=600)
 def get_mail_data():
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"],
-            scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    )
     client = gspread.authorize(creds)
-    sheet = client.open_by_url(st.secrets["mail_gsheet_url"]).worksheet("CLUB DIRIGEANTS")
-    df = pd.DataFrame(sheet.get_all_records())
-    if not df.empty:
-        df['Date'] = pd.to_datetime(df['Date']).dt.date
-    return df
+    SHEET = client.open_by_url(st.secrets["mail_gsheet_url"])
+    
+    # Get all worksheet titles
+    sheet_names = [ws.title for ws in SHEET.worksheets()]
+    
+    all_data = []
+    for sheet_name in sheet_names:
+        sheet = SHEET.worksheet(sheet_name)
+        df = pd.DataFrame(sheet.get_all_records())
+        if not df.empty:
+            df['Date'] = pd.to_datetime(df['Date']).dt.date
+            df['SheetName'] = sheet_name  # Optional: track source sheet
+            all_data.append(df)
+    
+    if all_data:
+        df_all = pd.concat(all_data, ignore_index=True)
+        return df_all
+    else:
+        return pd.DataFrame()
+
 
 def get_mailgun_stats(duration="30d"):
     try:
