@@ -89,6 +89,7 @@ today_date = datetime.now().date()
 ao_today = int(df_filtered[df_filtered["Date"] == today_date]["Nombre"].sum())
 total_refus = len(df_filtered[df_filtered["Status"] == "Refus"])
 total_opp = len(df_filtered[df_filtered["Status"] == "Opportunité"])
+total_accept = len(df_filtered[df_filtered["Status"] == "Accepté"])
 
 with m1:
     st.metric("Total AO (Filtered)", total_ao)
@@ -102,16 +103,19 @@ with m4:
 # --- ROW 2: CONVERSION RATES ---
 st.write("##")
 st.subheader("Conversion Rates")
-c_col1, c_col2 = st.columns(2)
+c_col1, c_col2, c_col3 = st.columns(3)
 
 # Rate Calculations
 rate_refus = (total_refus / total_ao * 100) if total_ao > 0 else 0
-rate_opp = (total_opp / total_ao * 100) if total_ao > 0 else 0
+rate_accept = (total_accept / total_ao * 100) if total_ao > 0 else 0
+rate_opp = (total_opp / total_accept * 100) if total_ao > 0 else 0
 
 with c_col1:
     st.metric("Taux de Conversion (Scraped to Refus)", f"{rate_refus:.1f}%")
 with c_col2:
-    st.metric("Taux de Conversion (Scraped to Opportunité)", f"{rate_opp:.1f}%")
+    st.metric("Taux de Conversion (Scraped to Accepté)", f"{rate_accept:.1f}%")
+with c_col3:
+    st.metric("Taux de Conversion (Accepté to Opportunité)", f"{rate_opp:.1f}%")
 
 st.divider()
 
