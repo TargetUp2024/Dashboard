@@ -111,6 +111,7 @@ else:
     df_filtered = df
 
 # --- MAIN UI ---
+st.title("📂 Appel d'Offres (AO) Tracking")
 
 # SECTION 1: HUGE TOTAL
 st.markdown('<div class="big-metric-container">', unsafe_allow_html=True)
