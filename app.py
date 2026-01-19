@@ -171,10 +171,11 @@ elif page == "📧 Mail Tracking":
         envoye = len(df_m[df_m['Email Envoyé '].str.contains('Oui', na=False)])
         st.metric("Emails Envoyés", envoye)
     with m3:
+        echoue = len(df_m[df_m['Email Envoyé '].str.contains('Non', na=False)])
+        st.metric("Emails Echoueés", echoue)
+    with m4:
         reponse = len(df_m[df_m['Email Reponse '].astype(str).str.strip() != ""])
         st.metric("Réponses Reçues", reponse)
-    with m4:
-        st.metric("Secteurs Unique", df_m['Sector'].nunique())
 
     st.divider()
 
