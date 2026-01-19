@@ -59,7 +59,6 @@ def get_mailgun_stats(duration="30d"):
     """Fetch Open Rate from Mailgun API"""
     try:
         url = f"https://api.mailgun.net/v3/{st.secrets['MAILGUN_DOMAIN']}/stats/total"
-        # API returns counts for various events
         params = {"event": ["accepted", "opened"], "duration": duration}
         response = requests.get(url, auth=("api", st.secrets["MAILGUN_API_KEY"]), params=params)
         if response.status_code == 200:
@@ -90,7 +89,7 @@ elif page == "📊 View Dashboard":
         st.error(f"❌ Connection Error: {e}"); st.stop()
 
     st.sidebar.divider()
-    st.sidebar.header("🗓️ Filters")
+    st.sidebar.header("🗓️ AO Filters")
     min_d, max_d = df['Date'].min(), df['Date'].max()
     date_range = st.sidebar.date_input("Date Range", value=(min_d, max_d), min_value=min_d, max_value=max_d)
     sources = st.sidebar.multiselect("Sources", options=df["Source"].unique(), default=df["Source"].unique())
@@ -117,7 +116,6 @@ elif page == "📊 View Dashboard":
     t3.metric("Refus Aujourd'hui", len(df_today[df_today["Status"] == "Refus"]))
     t4.metric("Opp Aujourd'hui", len(df_today[df_today["Status"] == "Opportunité"]))
 
-    # Conversion KPIs
     st.write("##"); st.subheader("Conversion KPIs")
     c1, c2, c3 = st.columns(3)
     tot = len(df_filtered)
@@ -140,19 +138,41 @@ elif page == "📊 View Dashboard":
         fig_pie = px.pie(df_filtered, names="Status", hole=0.5, color_discrete_map={"Refus": "#FF4B4B", "Opportunité": "#00CC96", "Accepté": "#636EFA"})
         st.plotly_chart(fig_pie, use_container_width=True)
 
-# --- PAGE 3: MAIL TRACKING (NEW SECTION ADDED) ---
+    st.subheader("Activité Timeline")
+    df_timeline = df_filtered.groupby('Date').size().reset_index(name='counts')
+    st.plotly_chart(px.area(df_timeline, x='Date', y='counts', template="plotly_white"), use_container_width=True)
+
+# --- PAGE 3: MAIL TRACKING ---
 elif page == "📧 Mail Tracking":
     st.title("📧 Mail Tracking Dashboard")
     
     try:
         df_m = get_mail_data()
-        # Fetch Mailgun stats (Global 30d and Today)
-        global_open_rate, global_opens = get_mailgun_stats("30d")
-        today_open_rate, today_opens = get_mailgun_stats("24h")
     except Exception as e:
-        st.error(f"Error: {e}"); st.stop()
+        st.error(f"Error loading data: {e}"); st.stop()
 
-    # SECTION: TODAY'S MAIL STATS
+    # --- SIDEBAR DATE FILTER (Mini Calendar) ---
+    st.sidebar.divider()
+    st.sidebar.header("🗓️ Mail Date Filter")
+    m_min, m_max = df_m['Date'].min(), df_m['Date'].max()
+    mail_date_range = st.sidebar.date_input("Select Range", value=(m_min, m_max), min_value=m_min, max_value=m_max)
+
+    # Filter data based on sidebar calendar
+    if isinstance(mail_date_range, tuple) and len(mail_date_range) == 2:
+        start_m, end_m = mail_date_range
+        df_m_filtered = df_m[(df_m['Date'] >= start_m) & (df_m['Date'] <= end_m)]
+        # Fetch Mailgun stats relative to days selected (approx)
+        days_diff = (end_m - start_m).days
+        duration_str = f"{days_diff if days_diff > 0 else 1}d"
+        open_rate, opens = get_mailgun_stats(duration_str)
+    else:
+        df_m_filtered = df_m
+        open_rate, opens = get_mailgun_stats("30d")
+
+    # Fetch Today's fixed stats from Mailgun
+    today_rate, today_opens = get_mailgun_stats("24h")
+
+    # --- SECTION: AUJOURD'HUI (FIXED) ---
     today_dt = datetime.now().date()
     df_m_today = df_m[df_m['Date'] == today_dt]
     
@@ -160,53 +180,27 @@ elif page == "📧 Mail Tracking":
     st.markdown(f'<div class="today-date">{today_dt.strftime("%A %d %B %Y")}</div>', unsafe_allow_html=True)
 
     mt1, mt2, mt3, mt4 = st.columns(4)
-    with mt1:
-        st.metric("Prospectés Aujourd'hui", len(df_m_today))
-    with mt2:
-        sent_today = len(df_m_today[df_m_today['Email Envoyé '].str.contains('Oui', na=False)])
-        st.metric("Envoyés Aujourd'hui", sent_today)
-    with mt3:
-        # Mailgun Real-time Open Rate for last 24h
-        st.metric("Open Rate (Mailgun 24h)", f"{today_open_rate:.1f}%")
-    with mt4:
-        reponse_today = len(df_m_today[df_m_today['Email Reponse '].astype(str).str.strip() != ""])
-        st.metric("Réponses Aujourd'hui", reponse_today)
+    mt1.metric("Prospectés Aujourd'hui", len(df_m_today))
+    mt2.metric("Envoyés Aujourd'hui", len(df_m_today[df_m_today['Email Envoyé '].str.contains('Oui', na=False)]))
+    mt3.metric("Open Rate (Mailgun 24h)", f"{today_rate:.1f}%")
+    mt4.metric("Réponses Aujourd'hui", len(df_m_today[df_m_today['Email Reponse '].astype(str).str.strip() != ""]))
 
     st.divider()
 
-    # SECTION: GLOBAL PERFORMANCE
-    st.subheader("Performance Globale")
+    # --- SECTION: FILTERED PERFORMANCE (BASED ON CALENDAR) ---
+    st.subheader("Performance sur la période sélectionnée")
     g1, g2, g3, g4 = st.columns(4)
-    with g1:
-        st.metric("Total Contacts Database", len(df_m))
-    with g2:
-        total_sent = len(df_m[df_m['Email Envoyé '].str.contains('Oui', na=False)])
-        st.metric("Total Emails Envoyés", total_sent)
-    with g3:
-        st.metric("Open Rate Global (Mailgun)", f"{global_open_rate:.1f}%", help="Based on last 30 days")
-    with g4:
-        total_rep = len(df_m[df_m['Email Reponse '].astype(str).str.strip() != ""])
-        st.metric("Total Réponses", total_rep)
+    g1.metric("Contacts dans la période", len(df_m_filtered))
+    g2.metric("Emails Envoyés", len(df_m_filtered[df_m_filtered['Email Envoyé '].str.contains('Oui', na=False)]))
+    g3.metric("Open Rate (Mailgun)", f"{open_rate:.1f}%")
+    g4.metric("Réponses Reçues", len(df_m_filtered[df_m_filtered['Email Reponse '].astype(str).str.strip() != ""]))
 
     st.divider()
 
-    # CHARTS
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.subheader("Top Secteurs")
-        sector_counts = df_m['Sector'].value_counts().reset_index().head(10)
-        sector_counts.columns = ['Sector', 'Count']
-        st.plotly_chart(px.bar(sector_counts, x='Count', y='Sector', orientation='h', color='Sector', template="plotly_white"), use_container_width=True)
-
-    with col_b:
-        st.subheader("Volume par Ville")
-        city_counts = df_m['City'].value_counts().reset_index()
-        city_counts.columns = ['City', 'Count']
-        st.plotly_chart(px.pie(city_counts, names='City', values='Count', hole=0.4), use_container_width=True)
-
-    st.subheader("Chronologie des envois")
-    mail_timeline = df_m.groupby('Date').size().reset_index(name='Volume')
-    st.plotly_chart(px.area(mail_timeline, x='Date', y='Volume', template="plotly_white"), use_container_width=True)
+    # Graph Timeline
+    st.subheader("Volume des envois sur la période")
+    mail_timeline = df_m_filtered.groupby('Date').size().reset_index(name='Volume')
+    st.plotly_chart(px.line(mail_timeline, x='Date', y='Volume', markers=True, template="plotly_white"), use_container_width=True)
 
     with st.expander("🔍 View Raw Mailing Database"):
-        st.dataframe(df_m, use_container_width=True, hide_index=True)
+        st.dataframe(df_m_filtered, use_container_width=True, hide_index=True)
