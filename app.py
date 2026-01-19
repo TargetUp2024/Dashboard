@@ -8,14 +8,53 @@ from datetime import datetime
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="AO Tracking System", page_icon="📈", layout="wide")
 
-# --- STYLE ---
+# --- CUSTOM CSS FOR DESIGN ---
 st.markdown("""
     <style>
+    /* Main background */
     .main { background-color: #f8f9fa; }
-    div[data-testid="stMetricValue"] { font-size: 28px; color: #1f77b4; }
-    /* Add padding to chart containers */
-    .chart-container {
-        padding: 20px;
+    
+    /* Big Metric Styling */
+    .big-metric-container {
+        padding-top: 0px;
+        margin-bottom: -20px;
+    }
+    .big-metric-value {
+        font-size: 85px !important;
+        font-weight: 800 !important;
+        color: #1f77b4;
+        line-height: 1;
+        margin: 0;
+    }
+    .big-metric-label {
+        font-size: 20px !important;
+        color: #666;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+    }
+    
+    /* Today Section Styling */
+    .today-header {
+        font-size: 22px;
+        font-weight: 700;
+        color: #2c3e50;
+        margin-top: 20px;
+        margin-bottom: 2px;
+    }
+    .today-date {
+        font-size: 16px;
+        color: #7f8c8d;
+        margin-bottom: 15px;
+    }
+
+    /* Reduce vertical space between elements */
+    .block-container {
+        padding-top: 2rem !important;
+    }
+    
+    /* Status colors for metrics */
+    [data-testid="stMetricValue"] {
+        font-weight: 700;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -23,133 +62,132 @@ st.markdown("""
 # --- GOOGLE SHEETS CONNECTION ---
 @st.cache_data(ttl=600)
 def get_data():
+    # Credentials from Streamlit Secrets
     credentials_dict = st.secrets["gcp_service_account"]
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(credentials_dict, scopes=scope)
     client = gspread.authorize(creds)
     
+    # Open sheet
     SHEET_URL = st.secrets["private_gsheet_url"]
     sheet = client.open_by_url(SHEET_URL).sheet1
     
+    # Data to DataFrame
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
     
-    # DATA CLEANING
+    # Cleaning
     df = df.dropna(subset=['Date', 'Source'])
-    df['Date'] = pd.to_datetime(df['Date']).dt.date # Keep as date objects for calendar filter
+    df['Date'] = pd.to_datetime(df['Date']).dt.date
     df['Nombre'] = pd.to_numeric(df['Nombre'], errors='coerce').fillna(1)
     return df
 
-# Initialize Data
+# Load Data
 try:
     df = get_data()
 except Exception as e:
     st.error(f"❌ Connection Error: {e}")
     st.stop()
 
-# --- SIDEBAR FILTERS ---
-st.sidebar.header("🗓️ Timeframe")
-# Date Range Filter (Mini Calendar)
-min_date = df['Date'].min()
-max_date = df['Date'].max()
-date_range = st.sidebar.date_input(
-    "Select Date Range",
-    value=(min_date, max_date),
-    min_value=min_date,
-    max_value=max_date
-)
+# --- SIDEBAR ---
+st.sidebar.header("🗓️ Filters")
+# Date Range (Calendar)
+min_d, max_d = df['Date'].min(), df['Date'].max()
+date_range = st.sidebar.date_input("Date Range", value=(min_d, max_d), min_value=min_d, max_value=max_d)
 
-st.sidebar.header("🔍 Category Filters")
-sources = st.sidebar.multiselect("Source Name", options=df["Source"].unique(), default=df["Source"].unique())
-status_options = df["Status"].unique()
-status = st.sidebar.multiselect("Status", options=status_options, default=status_options)
+sources = st.sidebar.multiselect("Sources", options=df["Source"].unique(), default=df["Source"].unique())
+status_list = st.sidebar.multiselect("Status", options=df["Status"].unique(), default=df["Status"].unique())
 
-# Apply Filters
+# Filter Logic
 if len(date_range) == 2:
     start_date, end_date = date_range
     df_filtered = df[
         (df["Date"] >= start_date) & 
         (df["Date"] <= end_date) & 
         (df["Source"].isin(sources)) & 
-        (df["Status"].isin(status))
+        (df["Status"].isin(status_list))
     ]
 else:
-    df_filtered = df[df["Source"].isin(sources) & df["Status"].isin(status)]
+    df_filtered = df
 
 # --- MAIN UI ---
-st.title("📊 Appel d'Offres (AO) Dashboard")
 
-# --- ROW 1: CORE METRICS ---
-st.subheader("General Overview")
-m1, m2, m3, m4 = st.columns(4)
+# SECTION 1: HUGE TOTAL
+st.markdown('<div class="big-metric-container">', unsafe_allow_html=True)
+st.markdown('<p class="big-metric-label">Total AO Filtered</p>', unsafe_allow_html=True)
+st.markdown(f'<p class="big-metric-value">{int(df_filtered["Nombre"].sum())}</p>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-# Calculations
-total_ao = int(df_filtered["Nombre"].sum())
-today_date = datetime.now().date()
-ao_today = int(df_filtered[df_filtered["Date"] == today_date]["Nombre"].sum())
-total_refus = len(df_filtered[df_filtered["Status"] == "Refus"])
-total_opp = len(df_filtered[df_filtered["Status"] == "Opportunité"])
-total_accept = len(df_filtered[df_filtered["Status"] == "Accepté"])
+st.write("---")
 
-with m1:
-    st.metric("Total AO (Filtered)", total_ao)
-with m2:
-    st.metric("Scraped Today", ao_today)
-with m3:
-    st.metric("Total Refus", total_refus)
-with m4:
-    st.metric("Total Opportunité", total_opp)
+# SECTION 2: TODAY'S METRICS (Compact)
+today_dt = datetime.now().date()
+df_today = df[df['Date'] == today_dt]
 
-# --- ROW 2: CONVERSION RATES ---
-st.write("##")
-st.subheader("Conversion Rates")
-c_col1, c_col2, c_col3 = st.columns(3)
+st.markdown(f'<div class="today-header">Aujourd\'hui</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="today-date">{today_dt.strftime("%A %d %B %Y")}</div>', unsafe_allow_html=True)
 
-# Rate Calculations
-rate_refus = (total_refus / total_ao * 100) if total_ao > 0 else 0
-rate_accept = (total_accept / total_ao * 100) if total_ao > 0 else 0
-rate_opp = (total_opp / total_accept * 100) if total_ao > 0 else 0
+t1, t2, t3, t4 = st.columns(4)
+with t1:
+    st.metric("Scraped Today", int(df_today["Nombre"].sum()))
+with t2:
+    st.metric("Accepté Today", len(df_today[df_today["Status"] == "Accepté"]))
+with t3:
+    st.metric("Refus Today", len(df_today[df_today["Status"] == "Refus"]))
+with t4:
+    st.metric("Opp Today", len(df_today[df_today["Status"] == "Opportunité"]))
 
-with c_col1:
-    st.metric("Taux de Conversion (Scraped to Refus)", f"{rate_refus:.1f}%")
-with c_col2:
-    st.metric("Taux de Conversion (Scraped to Accepté)", f"{rate_accept:.1f}%")
-with c_col3:
-    st.metric("Taux de Conversion (Accepté to Opportunité)", f"{rate_opp:.1f}%")
+st.write("##") # Medium gap
+
+# SECTION 3: CONVERSION RATES
+st.subheader("Conversion Metrics")
+c1, c2 = st.columns(2)
+tot = len(df_filtered)
+if tot > 0:
+    rate_refus = (len(df_filtered[df_filtered["Status"] == "Refus"]) / tot) * 100
+    rate_opp = (len(df_filtered[df_filtered["Status"] == "Opportunité"]) / tot) * 100
+else:
+    rate_refus = rate_opp = 0
+
+with c1:
+    st.metric("Taux Scraped ➔ Refus", f"{rate_refus:.1f}%")
+with c2:
+    st.metric("Taux Scraped ➔ Opportunité", f"{rate_opp:.1f}%")
 
 st.divider()
 
-# --- ROW 3: VISUALIZATIONS WITH SPACING ---
-col_left, spacer, col_right = st.columns([4.5, 1, 4.5]) # Added a 'spacer' column
+# SECTION 4: CHARTS (With Spacer for air)
+chart_col_left, spacer, chart_col_right = st.columns([4.5, 1, 4.5])
 
-with col_left:
+with chart_col_left:
     st.subheader("📁 Distribution by Source")
     fig_bar = px.bar(
         df_filtered.groupby("Source")["Nombre"].count().reset_index(),
         x="Nombre", y="Source", orientation='h',
         color="Source", template="plotly_white",
+        color_discrete_sequence=px.colors.qualitative.G10
     )
-    fig_bar.update_layout(showlegend=False, margin=dict(l=0, r=0, t=20, b=0))
+    fig_bar.update_layout(showlegend=False, margin=dict(l=0, r=0, t=10, b=0), height=350)
     st.plotly_chart(fig_bar, use_container_width=True)
 
-with col_right:
+with chart_col_right:
     st.subheader("🎯 Status Breakdown")
     fig_pie = px.pie(
         df_filtered, names="Status", 
-        color_discrete_map={"Refus": "#ef4444", "Opportunité": "#10b981"},
-        hole=0.5
+        hole=0.5,
+        color_discrete_map={"Refus": "#FF4B4B", "Opportunité": "#00CC96", "Accepté": "#636EFA"}
     )
-    fig_pie.update_layout(margin=dict(l=0, r=0, t=20, b=0))
+    fig_pie.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=350)
     st.plotly_chart(fig_pie, use_container_width=True)
 
-# --- ROW 4: TIMELINE ---
+# SECTION 5: TIMELINE
 st.write("##")
-st.subheader("📅 Activity Over Time")
+st.subheader("📅 Activity Timeline")
 df_timeline = df_filtered.groupby('Date').size().reset_index(name='counts')
 fig_line = px.area(df_timeline, x='Date', y='counts', template="plotly_white")
-fig_line.update_traces(line_color='#007bff')
+fig_line.update_traces(line_color='#1f77b4', fillcolor='rgba(31, 119, 180, 0.2)')
 st.plotly_chart(fig_line, use_container_width=True)
 
-# Data Explorer
-with st.expander("🔍 View Detailed Data List"):
+# SECTION 6: TABLE
+with st.expander("🔍 View Raw Database"):
     st.dataframe(df_filtered, use_container_width=True, hide_index=True)
