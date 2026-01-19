@@ -182,7 +182,7 @@ elif page == "🌐 Google Analytics":
         col_t1, col_t2, col_y1, col_y2 = st.columns(4)
         
         df_ga_today = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "today", "today")
-       df_ga_yest  = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "yesterday", "yesterday")
+        df_ga_yest  = run_ga_report(pid, ["date"], ["activeUsers", "sessions"], "yesterday", "yesterday")
 
 
         def s_sum(df, col): return pd.to_numeric(df[col]).sum() if not df.empty else 0
