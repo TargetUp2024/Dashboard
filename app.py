@@ -35,6 +35,8 @@ def get_ga_client():
 
 # --- DATA FETCHING FUNCTIONS ---
 
+# --- DATA FETCHING FUNCTIONS ---
+
 @st.cache_data(ttl=600)
 def get_ao_data():
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], 
