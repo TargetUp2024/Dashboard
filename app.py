@@ -115,7 +115,7 @@ page = st.sidebar.selectbox("Go to:", ["🏠 Home", "📊 AO Dashboard", "📧 M
 # --- PAGE 1: HOME ---
 if page == "🏠 Home":
     st.title("AO & Marketing Intelligence System")
-    st.markdown("### Welcome! Use the sidebar to navigate.")
+    st.markdown("### Bienvenue ! Utilisez la barre latérale pour naviguer.")
 
 # --- PAGE 2: AO DASHBOARD (ORIGINAL CODE UNCHANGED) ---
 elif page == "📊 AO Dashboard":
