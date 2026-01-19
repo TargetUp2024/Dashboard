@@ -171,13 +171,37 @@ elif page == "📊 AO Dashboard":
     c3.metric("Taux Accepté ➔ Opportunité", f"{rate_opp:.1f}%")
 
     st.divider()
-    chart_col_left, spacer, chart_col_right = st.columns([4.5, 1, 4.5])
-    with chart_col_left:
-        fig_bar = px.bar(df_filtered.groupby("Source")["Nombre"].count().reset_index(), x="Nombre", y="Source", orientation='h', color="Source", template="plotly_white")
-        st.plotly_chart(fig_bar, use_container_width=True)
-    with chart_col_right:
-        fig_pie = px.pie(df_filtered, names="Status", hole=0.5, color_discrete_map={"Refus": "#FF4B4B", "Opportunité": "#00CC96", "Accepté": "#636EFA"})
-        st.plotly_chart(fig_pie, use_container_width=True)
+
+    # --- BAR CHART: Source Distribution ---
+    fig_bar = px.bar(
+        df_filtered.groupby("Source")["Nombre"]
+        .count()
+        .reset_index(),
+        x="Nombre",
+        y="Source",
+        orientation="h",
+        color="Source",
+        template="plotly_white",
+        title="Répartition par source"
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
+    
+    st.divider()
+    
+    # --- PIE CHART: Status Distribution ---
+    fig_pie = px.pie(
+        df_filtered,
+        names="Status",
+        hole=0.5,
+        color_discrete_map={
+            "Refus": "#FF4B4B",
+            "Opportunité": "#00CC96",
+            "Accepté": "#636EFA"
+        },
+        title="Analyse par statut"
+    )
+    st.plotly_chart(fig_pie, use_container_width=True)
+
 
     st.subheader("Activité Timeline")
     df_timeline = df_filtered.groupby('Date').size().reset_index(name='counts')
