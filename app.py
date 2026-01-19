@@ -47,7 +47,7 @@ def get_mail_data():
     client = gspread.authorize(creds)
     # Using the new URL from your secrets
     MAIL_SHEET_URL = st.secrets["mail_gsheet_url"]
-    sheet = client.open_by_url(MAIL_SHEET_URL).sheet1
+    sheet = client.open_by_url(MAIL_SHEET_URL).worksheet("CLUB DIRIGEANTS")
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
     if not df.empty:
