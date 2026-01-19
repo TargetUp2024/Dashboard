@@ -75,23 +75,23 @@ def get_mail_data():
     client = gspread.authorize(creds)
     SHEET = client.open_by_url(st.secrets["mail_gsheet_url"])
     
-    # Get all worksheet titles
-    sheet_names = [ws.title for ws in SHEET.worksheets()]
-    
     all_data = []
-    for sheet_name in sheet_names:
-        sheet = SHEET.worksheet(sheet_name)
-        df = pd.DataFrame(sheet.get_all_records())
+    for ws in SHEET.worksheets():
+        df = pd.DataFrame(ws.get_all_records())
         if not df.empty:
-            df['Date'] = pd.to_datetime(df['Date']).dt.date
-            df['SheetName'] = sheet_name  # Optional: track source sheet
-            all_data.append(df)
+            if 'Date' in df.columns:
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
+                df['SheetName'] = ws.title  # optional: track source sheet
+                all_data.append(df)
+            else:
+                st.warning(f"Sheet '{ws.title}' skipped: no 'Date' column found.")
     
     if all_data:
         df_all = pd.concat(all_data, ignore_index=True)
         return df_all
     else:
         return pd.DataFrame()
+
 
 
 def get_mailgun_stats(duration="30d"):
