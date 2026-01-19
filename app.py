@@ -38,6 +38,23 @@ def get_ga_client():
 # --- DATA FETCHING FUNCTIONS ---
 
 @st.cache_data(ttl=600)
+def get_data():
+    """Original AO Data Fetching"""
+    credentials_dict = st.secrets["gcp_service_account"]
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(credentials_dict, scopes=scope)
+    client = gspread.authorize(creds)
+    SHEET_URL = st.secrets["private_gsheet_url"]
+    sheet = client.open_by_url(SHEET_URL).sheet1
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    df = df.dropna(subset=['Date', 'Source'])
+    df['Date'] = pd.to_datetime(df['Date']).dt.date
+    df['Nombre'] = pd.to_numeric(df['Nombre'], errors='coerce').fillna(1)
+    return df
+
+
+@st.cache_data(ttl=600)
 def get_ao_data():
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], 
             scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
