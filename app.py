@@ -111,7 +111,7 @@ else:
     df_filtered = df
 
 # --- MAIN UI ---
-st.title("📂 Appel d'Offres (AO) Tracking")
+st.title("Appel d'Offres (AO) Tracking")
 
 # SECTION 1: HUGE TOTAL
 st.markdown('<div class="big-metric-container">', unsafe_allow_html=True)
@@ -130,30 +130,33 @@ st.markdown(f'<div class="today-date">{today_dt.strftime("%A %d %B %Y")}</div>',
 
 t1, t2, t3, t4 = st.columns(4)
 with t1:
-    st.metric("Scraped Today", int(df_today["Nombre"].sum()))
+    st.metric("Scrapeé Aujourd'hui", int(df_today["Nombre"].sum()))
 with t2:
-    st.metric("Accepté Today", len(df_today[df_today["Status"] == "Accepté"]))
+    st.metric("Accepté Aujourd'hui", len(df_today[df_today["Status"] == "Accepté"]))
 with t3:
-    st.metric("Refus Today", len(df_today[df_today["Status"] == "Refus"]))
+    st.metric("Refus Aujourd'hui", len(df_today[df_today["Status"] == "Refus"]))
 with t4:
-    st.metric("Opp Today", len(df_today[df_today["Status"] == "Opportunité"]))
+    st.metric("Opp Aujourd'hui", len(df_today[df_today["Status"] == "Opportunité"]))
 
 st.write("##") # Medium gap
 
 # SECTION 3: CONVERSION RATES
-st.subheader("Conversion Metrics")
-c1, c2 = st.columns(2)
+st.subheader("Conversion KPIs")
+c1, c2, c3 = st.columns(3)
 tot = len(df_filtered)
 if tot > 0:
     rate_refus = (len(df_filtered[df_filtered["Status"] == "Refus"]) / tot) * 100
-    rate_opp = (len(df_filtered[df_filtered["Status"] == "Opportunité"]) / tot) * 100
+    rate_accep = (len(df_filtered[df_filtered["Status"] == "Accepté"]) / tot) * 100
+    rate_opp = (len(df_filtered[df_filtered["Status"] == "Opportunité"]) / rate_accep) * 100
 else:
-    rate_refus = rate_opp = 0
+    rate_refus = rate_accep = rate_opp = 0
 
 with c1:
     st.metric("Taux Scraped ➔ Refus", f"{rate_refus:.1f}%")
 with c2:
-    st.metric("Taux Scraped ➔ Opportunité", f"{rate_opp:.1f}%")
+    st.metric("Taux Scraped ➔ Accepté", f"{rate_accep:.1f}%")
+with c3:
+    st.metric("Taux Accepté ➔ Opportunité", f"{rate_opp:.1f}%")
 
 st.divider()
 
@@ -161,7 +164,7 @@ st.divider()
 chart_col_left, spacer, chart_col_right = st.columns([4.5, 1, 4.5])
 
 with chart_col_left:
-    st.subheader("📁 Distribution by Source")
+    st.subheader("Distribution en Source")
     fig_bar = px.bar(
         df_filtered.groupby("Source")["Nombre"].count().reset_index(),
         x="Nombre", y="Source", orientation='h',
@@ -172,7 +175,7 @@ with chart_col_left:
     st.plotly_chart(fig_bar, use_container_width=True)
 
 with chart_col_right:
-    st.subheader("🎯 Status Breakdown")
+    st.subheader("Status Analyse")
     fig_pie = px.pie(
         df_filtered, names="Status", 
         hole=0.5,
@@ -183,7 +186,7 @@ with chart_col_right:
 
 # SECTION 5: TIMELINE
 st.write("##")
-st.subheader("📅 Activity Timeline")
+st.subheader("Activité Timeline")
 df_timeline = df_filtered.groupby('Date').size().reset_index(name='counts')
 fig_line = px.area(df_timeline, x='Date', y='counts', template="plotly_white")
 fig_line.update_traces(line_color='#1f77b4', fillcolor='rgba(31, 119, 180, 0.2)')
