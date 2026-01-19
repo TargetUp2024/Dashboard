@@ -109,6 +109,11 @@ def run_ga_report(property_id, dimensions, metrics, start_date, end_date="today"
 
 # --- SIDEBAR NAVIGATION ---
 #st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3090/3090116.png", width=80)
+st.sidebar.image(
+    "https://targetupconsulting.com/web/image/website/4/logo/targetupconsulting?unique=c9518b0",
+    width=140
+)
+
 st.sidebar.title("Main Menu")
 page = st.sidebar.selectbox("Go to:", ["🏠 Home", "📊 AO Dashboard", "📧 Mail Tracking", "🌐 Google Analytics"])
 
