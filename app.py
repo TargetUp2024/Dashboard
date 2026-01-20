@@ -70,27 +70,38 @@ def get_ao_data():
 def get_mail_data():
     creds = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
-        scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
     )
     client = gspread.authorize(creds)
     SHEET = client.open_by_url(st.secrets["mail_gsheet_url"])
-    
+
     all_data = []
+
     for ws in SHEET.worksheets():
         df = pd.DataFrame(ws.get_all_records())
-        if not df.empty:
-            if 'Date' in df.columns:
-                df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
-                df['SheetName'] = ws.title  # optional: track source sheet
-                all_data.append(df)
-            else:
-                st.warning(f"Sheet '{ws.title}' skipped: no 'Date' column found.")
-    
-    if all_data:
-        df_all = pd.concat(all_data, ignore_index=True)
-        return df_all
-    else:
-        return pd.DataFrame()
+
+        if df.empty or 'Date' not in df.columns:
+            continue
+
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+
+        # DROP INVALID DATES (CRITICAL)
+        df = df.dropna(subset=['Date'])
+
+        if df.empty:
+            continue
+
+        df['Date'] = df['Date'].dt.date
+        df['SheetName'] = ws.title
+        all_data.append(df)
+
+    if not all_data:
+        return pd.DataFrame(columns=['Date'])
+
+    return pd.concat(all_data, ignore_index=True)
 
 
 
@@ -230,6 +241,9 @@ elif page == "📧 Mail Tracking":
     
     try:
         df_m = get_mail_data()
+        if df_m.empty or df_m['Date'].isna().all():
+            st.warning("No valid mailing data available for date filtering.")
+            st.stop()
     except Exception as e:
         st.error(f"Error loading data: {e}"); st.stop()
 
