@@ -324,7 +324,14 @@ elif page == "🌐 Google Analytics":
                 df_master = run_ga_report(
                     pid, 
                     ["date", "sessionDefaultChannelGroup", "country", "pagePath"], 
-                    ["activeUsers", "newUsers", "sessions", "screenPageViews", "engagementTime"],
+                    [
+                        "activeUsers",
+                        "newUsers",
+                        "sessions",
+                        "screenPageViews",
+                        "engagementTime",
+                        "engagementRate"
+                    ],
                     s_str, e_str
                 )
 
@@ -332,7 +339,13 @@ elif page == "🌐 Google Analytics":
                 st.warning("No data found for this period.")
             else:
                 # Convert metrics to numeric
-                cols_to_fix = ["activeUsers", "newUsers", "sessions", "screenPageViews", "engagementRate"]
+                cols_to_fix = [
+                    "activeUsers",
+                    "newUsers",
+                    "sessions",
+                    "screenPageViews",
+                    "engagementRate"
+                ]                
                 for col in cols_to_fix:
                     df_master[col] = pd.to_numeric(df_master[col], errors='coerce').fillna(0)
                     # --- SESSION DURATION (GA4 SAFE) ---
@@ -383,12 +396,9 @@ elif page == "🌐 Google Analytics":
                 p3.metric("Page Views", f"{int(t_pv):,}")
                 p4.metric("Returning Rate", f"{ret_rate:.1f}%")
 
-                avg_duration = (
-                    df_filtered["avgSessionDurationSec"].mean()
-                    if not df_filtered.empty else 0
-                )
-                
-                st.metric("Avg Session Duration", f"{avg_duration:.1f}s")
+                avg_engagement_rate = df_filtered["engagementRate"].mean() * 100
+                st.metric("Engagement Rate", f"{avg_engagement_rate:.1f}%")
+
 
                 st.divider()
 
