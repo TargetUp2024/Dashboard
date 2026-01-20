@@ -324,7 +324,7 @@ elif page == "🌐 Google Analytics":
                 df_master = run_ga_report(
                     pid, 
                     ["date", "sessionDefaultChannelGroup", "country", "pagePath"], 
-                    ["activeUsers", "newUsers", "sessions", "screenPageViews", "engagementRate"], 
+                    ["activeUsers", "newUsers", "sessions", "screenPageViews", "engagementTime"],
                     s_str, e_str
                 )
 
@@ -335,10 +335,22 @@ elif page == "🌐 Google Analytics":
                 cols_to_fix = ["activeUsers", "newUsers", "sessions", "screenPageViews", "engagementRate"]
                 for col in cols_to_fix:
                     df_master[col] = pd.to_numeric(df_master[col], errors='coerce').fillna(0)
+                    # --- SESSION DURATION (GA4 SAFE) ---
+                    df_master["avgSessionDurationSec"] = (
+                        df_master["engagementTime"] / df_master["sessions"]
+                    ).replace([float("inf")], 0).fillna(0)
+
 
                 # --- SIDEBAR FILTERS ---
                 st.sidebar.subheader("🔍 Refine Results")
-                
+               
+                st.sidebar.subheader("⏱ Session Duration")
+                session_duration_filter = st.sidebar.radio(
+                    "Session duration filter",
+                    ["All sessions", "Sessions > 1 second"],
+                    index=0
+                )
+                 
                 selected_countries = st.sidebar.multiselect("Filter by Country", options=sorted(df_master["country"].unique()))
                 selected_sources = st.sidebar.multiselect("Filter by Source Type", options=sorted(df_master["sessionDefaultChannelGroup"].unique()))
                 selected_pages = st.sidebar.multiselect("Filter by Page Path", options=sorted(df_master["pagePath"].unique()))
@@ -351,6 +363,9 @@ elif page == "🌐 Google Analytics":
                     df_filtered = df_filtered[df_filtered["sessionDefaultChannelGroup"].isin(selected_sources)]
                 if selected_pages:
                     df_filtered = df_filtered[df_filtered["pagePath"].isin(selected_pages)]
+                if session_duration_filter == "Sessions > 1 second":
+                    df_filtered = df_filtered[df_filtered["avgSessionDurationSec"] > 1]
+
 
                 # --- A. SNAPSHOTS (Filtered based on Sidebar only, ignoring calendar) ---
                 st.markdown('<div class="today-header">Performance Metrics</div>', unsafe_allow_html=True)
@@ -362,10 +377,18 @@ elif page == "🌐 Google Analytics":
                 ret_rate = ((t_u - df_filtered["newUsers"].sum()) / t_u * 100) if t_u > 0 else 0
 
                 p1, p2, p3, p4 = st.columns(4)
+
                 p1.metric("Users", f"{int(t_u):,}")
                 p2.metric("Sessions", f"{int(t_s):,}")
                 p3.metric("Page Views", f"{int(t_pv):,}")
                 p4.metric("Returning Rate", f"{ret_rate:.1f}%")
+
+                avg_duration = (
+                    df_filtered["avgSessionDurationSec"].mean()
+                    if not df_filtered.empty else 0
+                )
+                
+                st.metric("Avg Session Duration", f"{avg_duration:.1f}s")
 
                 st.divider()
 
