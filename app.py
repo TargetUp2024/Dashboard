@@ -35,8 +35,6 @@ def get_ga_client():
 
 # --- DATA FETCHING FUNCTIONS ---
 
-# --- DATA FETCHING FUNCTIONS ---
-
 @st.cache_data(ttl=600)
 def get_data():
     """Original AO Data Fetching"""
@@ -48,19 +46,6 @@ def get_data():
     sheet = client.open_by_url(SHEET_URL).sheet1
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
-    df = df.dropna(subset=['Date', 'Source'])
-    df['Date'] = pd.to_datetime(df['Date']).dt.date
-    df['Nombre'] = pd.to_numeric(df['Nombre'], errors='coerce').fillna(1)
-    return df
-
-
-@st.cache_data(ttl=600)
-def get_ao_data():
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], 
-            scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
-    client = gspread.authorize(creds)
-    sheet = client.open_by_url(st.secrets["private_gsheet_url"]).sheet1
-    df = pd.DataFrame(sheet.get_all_records())
     df = df.dropna(subset=['Date', 'Source'])
     df['Date'] = pd.to_datetime(df['Date']).dt.date
     df['Nombre'] = pd.to_numeric(df['Nombre'], errors='coerce').fillna(1)
@@ -104,7 +89,6 @@ def get_mail_data():
     return pd.concat(all_data, ignore_index=True)
 
 
-
 def get_mailgun_stats(duration="30d"):
     try:
         url = f"https://api.mailgun.net/v3/{st.secrets['MAILGUN_DOMAIN']}/stats/total"
@@ -136,7 +120,6 @@ def run_ga_report(property_id, dimensions, metrics, start_date, end_date="today"
     return pd.DataFrame(output)
 
 # --- SIDEBAR NAVIGATION ---
-#st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3090/3090116.png", width=80)
 st.sidebar.image(
     "https://targetupconsulting.com/web/image/website/4/logo/targetupconsulting?unique=c9518b0",
     width=140
@@ -150,7 +133,7 @@ if page == "🏠 Home":
     st.title("AO & Marketing Intelligence System")
     st.markdown("### Bienvenue ! Utilisez la barre latérale pour naviguer.")
 
-# --- PAGE 2: AO DASHBOARD (ORIGINAL CODE UNCHANGED) ---
+# --- PAGE 2: AO DASHBOARD ---
 elif page == "📊 AO Dashboard":
     try:
         df = get_data()
@@ -319,7 +302,6 @@ elif page == "🌐 Google Analytics":
             s_str, e_str = ga_range[0].strftime("%Y-%m-%d"), ga_range[1].strftime("%Y-%m-%d")
             
             # Fetch Master Data for Filtering
-            # We fetch all necessary dimensions in one report to allow cross-filtering
             with st.spinner('Fetching Analytics Data...'):
                 df_master = run_ga_report(
                     pid, 
@@ -329,7 +311,7 @@ elif page == "🌐 Google Analytics":
                         "newUsers",
                         "sessions",
                         "screenPageViews",
-                        "engagementTime",
+                        "userEngagementDuration",  # Fixed metric name (was engagementTime)
                         "engagementRate"
                     ],
                     s_str, e_str
@@ -344,15 +326,16 @@ elif page == "🌐 Google Analytics":
                     "newUsers",
                     "sessions",
                     "screenPageViews",
+                    "userEngagementDuration",
                     "engagementRate"
                 ]                
                 for col in cols_to_fix:
                     df_master[col] = pd.to_numeric(df_master[col], errors='coerce').fillna(0)
-                    # --- SESSION DURATION (GA4 SAFE) ---
-                    df_master["avgSessionDurationSec"] = (
-                        df_master["engagementTime"] / df_master["sessions"]
-                    ).replace([float("inf")], 0).fillna(0)
-
+                
+                # --- SESSION DURATION (GA4 SAFE) ---
+                df_master["avgSessionDurationSec"] = (
+                    df_master["userEngagementDuration"] / df_master["sessions"]
+                ).replace([float("inf")], 0).fillna(0)
 
                 # --- SIDEBAR FILTERS ---
                 st.sidebar.subheader("🔍 Refine Results")
@@ -380,7 +363,7 @@ elif page == "🌐 Google Analytics":
                     df_filtered = df_filtered[df_filtered["avgSessionDurationSec"] > 1]
 
 
-                # --- A. SNAPSHOTS (Filtered based on Sidebar only, ignoring calendar) ---
+                # --- A. SNAPSHOTS ---
                 st.markdown('<div class="today-header">Performance Metrics</div>', unsafe_allow_html=True)
                 
                 t_u = df_filtered["activeUsers"].sum()
@@ -398,7 +381,6 @@ elif page == "🌐 Google Analytics":
 
                 avg_engagement_rate = df_filtered["engagementRate"].mean() * 100
                 st.metric("Engagement Rate", f"{avg_engagement_rate:.1f}%")
-
 
                 st.divider()
 
