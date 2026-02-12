@@ -59,14 +59,15 @@ def get_odoo_crm_data():
         models = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/object')
 
         # Fetch Leads
+        # 1. Fetch CRM Leads/Opportunities (Removed utm_source_id to stop the crash)
         leads_data = models.execute_kw(db, uid, api_key, 'crm.lead', 'search_read', 
-            [[]], # Empty list means "Get all"
-            {'fields': ['name', 'expected_revenue', 'probability', 'stage_id', 'utm_source_id']})
+            [[]], 
+            {'fields': ['name', 'expected_revenue', 'probability', 'stage_id', 'create_date'], 'limit': 100})
         
-        # Fetch Invoices
+        # 2. Fetch Invoiced Revenue 
         invoice_data = models.execute_kw(db, uid, api_key, 'account.move', 'search_read',
             [[('state', '=', 'posted'), ('move_type', '=', 'out_invoice')]],
-            {'fields': ['amount_total', 'invoice_date', 'payment_state']})
+            {'fields': ['amount_total', 'invoice_date', 'payment_state'], 'limit': 100})
         
         return pd.DataFrame(leads_data), pd.DataFrame(invoice_data)
         
