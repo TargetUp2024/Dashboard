@@ -42,34 +42,41 @@ def get_odoo_crm_data():
     url = st.secrets["ODOO_URL"]
     db = st.secrets["ODOO_DB"]
     username = st.secrets["ODOO_USER"]
-    api_key = st.secrets["ODOO_API_KEY"] # This is your API Key
+    api_key = st.secrets["ODOO_API_KEY"] 
 
     try:
+        # 1. Connect to the server
         common = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/common')
+        
+        # 2. Authenticate
         uid = common.authenticate(db, username, api_key, {})
+        
+        if not uid:
+            st.error("❌ Odoo Authentication Failed: Check Username or API Key.")
+            return pd.DataFrame(), pd.DataFrame()
+
+        # 3. Create the object proxy
         models = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/object')
 
-        # 1. Fetch CRM Leads/Opportunities
-        # Fields: name, probability (conversion chance), expected_revenue, stage, and source
+        # Fetch Leads
         leads_data = models.execute_kw(db, uid, api_key, 'crm.lead', 'search_read', 
-            [[('active', '=', True)]], 
-            {'fields': ['name', 'expected_revenue', 'probability', 'stage_id', 'create_date', 'type', 'utm_source_id']})
+            [[]], # Empty list means "Get all"
+            {'fields': ['name', 'expected_revenue', 'probability', 'stage_id', 'utm_source_id']})
         
-        df_leads = pd.DataFrame(leads_data)
-        
-        # 2. Fetch Invoiced Revenue (Real Finance)
-        # We look for posted invoices to see actual cash flow
+        # Fetch Invoices
         invoice_data = models.execute_kw(db, uid, api_key, 'account.move', 'search_read',
             [[('state', '=', 'posted'), ('move_type', '=', 'out_invoice')]],
             {'fields': ['amount_total', 'invoice_date', 'payment_state']})
         
-        df_revenue = pd.DataFrame(invoice_data)
+        return pd.DataFrame(leads_data), pd.DataFrame(invoice_data)
         
-        return df_leads, df_revenue
-    except Exception as e:
-        st.error(f"Odoo Connection Failed: {e}")
+    except xmlrpc.client.Fault as e:
+        if "Access Denied" in str(e):
+            st.error("🔑 Access Denied: Your API Key/Username combination is incorrect for this Database.")
+        else:
+            st.error(f"Odoo Fault: {e}")
         return pd.DataFrame(), pd.DataFrame()
-        
+
 
 # Initialize FB API
 def init_fb_api():
