@@ -42,8 +42,13 @@ def init_fb_api():
 @st.cache_data(ttl=3600)
 def get_fb_ads_data(start_date, end_date):
     init_fb_api()
-    account = AdAccount(st.secrets["FB_AD_ACCOUNT_ID"])
+    # Change this line in your get_fb_ads_data function:
+    account_id = st.secrets["FB_AD_ACCOUNT_ID"]
+    if not account_id.startswith('act_'):
+        account_id = f"act_{account_id}"
     
+    account = AdAccount(account_id)
+        
     fields = [
         AdsInsights.Field.ad_name,
         AdsInsights.Field.impressions,
