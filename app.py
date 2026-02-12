@@ -38,45 +38,68 @@ st.markdown("""
 
 @st.cache_data(ttl=3600)
 def get_odoo_crm_data():
-    # Credentials from st.secrets
     url = st.secrets["ODOO_URL"]
     db = st.secrets["ODOO_DB"]
     username = st.secrets["ODOO_USER"]
-    api_key = st.secrets["ODOO_API_KEY"] 
+    api_key = st.secrets["ODOO_API_KEY"]
 
     try:
-        # 1. Connect to the server
-        common = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/common')
-        
-        # 2. Authenticate
+        common = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/common")
         uid = common.authenticate(db, username, api_key, {})
-        
         if not uid:
-            st.error("❌ Odoo Authentication Failed: Check Username or API Key.")
+            st.error("Odoo authentication failed")
             return pd.DataFrame(), pd.DataFrame()
 
-        # 3. Create the object proxy
-        models = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/object')
+        models = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/object")
 
-        # Fetch Leads
-        # 1. Fetch CRM Leads/Opportunities (Removed utm_source_id to stop the crash)
-        leads_data = models.execute_kw(db, uid, api_key, 'crm.lead', 'search_read', 
-            [[]], 
-            {'fields': ['name', 'expected_revenue', 'probability', 'stage_id', 'create_date'], 'limit': 100})
-        
-        # 2. Fetch Invoiced Revenue 
-        invoice_data = models.execute_kw(db, uid, api_key, 'account.move', 'search_read',
-            [[('state', '=', 'posted'), ('move_type', '=', 'out_invoice')]],
-            {'fields': ['amount_total', 'invoice_date', 'payment_state'], 'limit': 100})
-        
-        return pd.DataFrame(leads_data), pd.DataFrame(invoice_data)
-        
-    except xmlrpc.client.Fault as e:
-        if "Access Denied" in str(e):
-            st.error("🔑 Access Denied: Your API Key/Username combination is incorrect for this Database.")
-        else:
-            st.error(f"Odoo Fault: {e}")
+        # -----------------------------
+        # CRM LEADS / OPPORTUNITIES
+        # -----------------------------
+        leads = models.execute_kw(
+            db, uid, api_key,
+            'crm.lead', 'search_read',
+            [[]],
+            {
+                'fields': [
+                    'id',
+                    'name',
+                    'source_id',
+                    'stage_id',
+                    'expected_revenue',
+                    'probability',
+                    'create_date',
+                    'date_deadline',
+                    'lost_reason_id',
+                    'active'
+                ],
+                'limit': 5000
+            }
+        )
+
+        # -----------------------------
+        # INVOICES (REAL REVENUE)
+        # -----------------------------
+        invoices = models.execute_kw(
+            db, uid, api_key,
+            'account.move', 'search_read',
+            [[('state','=','posted'), ('move_type','=','out_invoice')]],
+            {
+                'fields': [
+                    'amount_total',
+                    'invoice_date',
+                    'payment_state',
+                    'invoice_origin'
+                ],
+                'limit': 5000
+            }
+        )
+
+        return pd.DataFrame(leads), pd.DataFrame(invoices)
+
+    except Exception as e:
+        st.error(f"Odoo error: {e}")
         return pd.DataFrame(), pd.DataFrame()
+
 
 
 # Initialize FB API
@@ -423,43 +446,88 @@ elif page == "💰 Financial Impact":
     st.title("💰 Finance & ROI Executive Overview")
     
     df_leads, df_revenue = get_odoo_crm_data()
-    
-    if not df_leads.empty:
-        # --- CLEAN DATA FOR DISPLAY ---
-        # This fixes the "ArrowInvalid" error by converting Odoo tuples to strings
-        df_display = df_leads.copy()
-        for col in df_display.columns:
-            # If Odoo sent a list/tuple like [14, "Qualified"], just keep "Qualified"
-            df_display[col] = df_display[col].apply(lambda x: x[1] if isinstance(x, (list, tuple)) and len(x) > 1 else x)
-            # Ensure everything else is a string or number for the table
-            if df_display[col].dtype == object:
-                df_display[col] = df_display[col].astype(str)
 
-        # Layout: Top Line Metrics
-        c1, c2 = st.columns(2)
-        total_pipeline = pd.to_numeric(df_leads['expected_revenue'], errors='coerce').sum()
-        actual_revenue = pd.to_numeric(df_revenue['amount_total'], errors='coerce').sum()
-        
-        c1.metric("Pipeline Value (Expected)", f"${total_pipeline:,.2f}")
-        c2.metric("Actual Revenue (Invoiced)", f"${actual_revenue:,.2f}")
+    if df_leads.empty:
+        st.warning("No CRM data available")
+        st.stop()
 
-        st.divider()
+    # -----------------------
+    # CLEAN ODOO DATA
+    # -----------------------
+    df_leads['source'] = df_leads['source_id'].apply(lambda x: x[1] if isinstance(x, list) else "Unknown")
+    df_leads['stage'] = df_leads['stage_id'].apply(lambda x: x[1] if isinstance(x, list) else "Unknown")
+    df_leads['expected_revenue'] = pd.to_numeric(df_leads['expected_revenue'], errors='coerce').fillna(0)
 
-        # Funnel Logic
-        st.subheader("Sales Pipeline Funnel")
-        # Use the cleaned stage names
-        df_leads['stage_name'] = df_leads['stage_id'].apply(lambda x: x[1] if isinstance(x, list) else str(x))
-        
-        fig_funnel = px.funnel(
-            df_leads.groupby('stage_name')['expected_revenue'].sum().reset_index().sort_values('expected_revenue', ascending=False),
-            y='stage_name', x='expected_revenue',
-            title="Revenue Distribution by Sales Stage"
+    df_revenue['amount_total'] = pd.to_numeric(df_revenue['amount_total'], errors='coerce').fillna(0)
+
+    # -----------------------
+    # TOP CEO METRICS
+    # -----------------------
+    total_pipeline = df_leads['expected_revenue'].sum()
+    total_revenue = df_revenue['amount_total'].sum()
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total Pipeline", f"€{total_pipeline:,.0f}")
+    c2.metric("Total Revenue", f"€{total_revenue:,.0f}")
+
+    st.divider()
+
+    # -----------------------
+    # FUNNEL BY SOURCE
+    # -----------------------
+    st.subheader("📊 Funnel by Acquisition Channel")
+
+    funnel = (
+        df_leads
+        .groupby(['source','stage'])
+        .agg(
+            leads=('id','count'),
+            pipeline=('expected_revenue','sum')
         )
-        st.plotly_chart(fig_funnel, use_container_width=True)
+        .reset_index()
+    )
 
-        with st.expander("🔍 View Odoo Lead Details"):
-            # Display the CLEANED dataframe
-            st.dataframe(df_display, use_container_width=True)
+    pivot_leads = funnel.pivot_table(index='source', columns='stage', values='leads', fill_value=0)
+    pivot_pipeline = funnel.pivot_table(index='source', columns='stage', values='pipeline', fill_value=0)
+
+    st.write("### Leads by Stage")
+    st.dataframe(pivot_leads, use_container_width=True)
+
+    st.write("### Pipeline € by Stage")
+    st.dataframe(pivot_pipeline, use_container_width=True)
+
+    # -----------------------
+    # LINK INVOICES → LEADS → SOURCE
+    # -----------------------
+    df_join = df_revenue.merge(
+        df_leads[['name','source']],
+        left_on='invoice_origin',
+        right_on='name',
+        how='left'
+    )
+
+    revenue_by_source = df_join.groupby('source')['amount_total'].sum().reset_index()
+
+    st.subheader("💶 Real Revenue by Source")
+    st.dataframe(revenue_by_source, use_container_width=True)
+
+    # -----------------------
+    # META ROI
+    # -----------------------
+    st.subheader("📈 Meta Ads ROI")
+
+    meta_spend = df_fb['spend'].sum() if 'df_fb' in locals() else 0
+    meta_pipeline = pivot_pipeline.loc['Meta Ads'].sum() if 'Meta Ads' in pivot_pipeline.index else 0
+    meta_revenue = revenue_by_source[revenue_by_source['source']=="Meta Ads"]['amount_total'].sum()
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Meta Spend", f"${meta_spend:,.0f}")
+    m2.metric("Meta Pipeline", f"€{meta_pipeline:,.0f}")
+    m3.metric("Meta Revenue", f"€{meta_revenue:,.0f}")
+
+    roi = ((meta_revenue - meta_spend) / meta_spend * 100) if meta_spend > 0 else 0
+    st.metric("Meta ROI", f"{roi:.1f}%")
+
 
 
 # --- PAGE 4: GOOGLE ANALYTICS (WITH FILTERS) ---
