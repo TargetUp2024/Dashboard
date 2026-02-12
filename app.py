@@ -425,27 +425,30 @@ elif page == "💰 Financial Impact":
     df_leads, df_revenue = get_odoo_crm_data()
     
     if not df_leads.empty:
+        # --- CLEAN DATA FOR DISPLAY ---
+        # This fixes the "ArrowInvalid" error by converting Odoo tuples to strings
+        df_display = df_leads.copy()
+        for col in df_display.columns:
+            # If Odoo sent a list/tuple like [14, "Qualified"], just keep "Qualified"
+            df_display[col] = df_display[col].apply(lambda x: x[1] if isinstance(x, (list, tuple)) and len(x) > 1 else x)
+            # Ensure everything else is a string or number for the table
+            if df_display[col].dtype == object:
+                df_display[col] = df_display[col].astype(str)
+
         # Layout: Top Line Metrics
-        c1, c2, c3 = st.columns(3)
-        
-        total_pipeline = df_leads['expected_revenue'].sum()
-        actual_revenue = df_revenue['amount_total'].sum()
+        c1, c2 = st.columns(2)
+        total_pipeline = pd.to_numeric(df_leads['expected_revenue'], errors='coerce').sum()
+        actual_revenue = pd.to_numeric(df_revenue['amount_total'], errors='coerce').sum()
         
         c1.metric("Pipeline Value (Expected)", f"${total_pipeline:,.2f}")
         c2.metric("Actual Revenue (Invoiced)", f"${actual_revenue:,.2f}")
-        
-        # Calculate ROI if you have Meta Spend data
-        # Assuming you call get_fb_ads_data() here
-        # total_spend = df_fb['spend'].sum()
-        # roi = (actual_revenue - total_spend) / total_spend
-        # c3.metric("Global ROI", f"{roi*100:.1f}%")
 
         st.divider()
 
-        # Visualization: CRM Pipeline by Stage
+        # Funnel Logic
         st.subheader("Sales Pipeline Funnel")
-        # Extracting stage name from Odoo's (ID, Name) tuple
-        df_leads['stage_name'] = df_leads['stage_id'].apply(lambda x: x[1] if isinstance(x, list) else 'Unknown')
+        # Use the cleaned stage names
+        df_leads['stage_name'] = df_leads['stage_id'].apply(lambda x: x[1] if isinstance(x, list) else str(x))
         
         fig_funnel = px.funnel(
             df_leads.groupby('stage_name')['expected_revenue'].sum().reset_index().sort_values('expected_revenue', ascending=False),
@@ -455,9 +458,8 @@ elif page == "💰 Financial Impact":
         st.plotly_chart(fig_funnel, use_container_width=True)
 
         with st.expander("🔍 View Odoo Lead Details"):
-            st.dataframe(df_leads, use_container_width=True)
-    else:
-        st.info("No CRM data found or connection not configured.")
+            # Display the CLEANED dataframe
+            st.dataframe(df_display, use_container_width=True)
 
 
 # --- PAGE 4: GOOGLE ANALYTICS (WITH FILTERS) ---
