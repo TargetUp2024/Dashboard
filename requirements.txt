@@ -5,5 +5,4 @@ gspread
 google-auth
 google-analytics-data
 requests
-facebook-business
-xmlrpc 
+facebook-business 
