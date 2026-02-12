@@ -14,7 +14,7 @@ from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.adsinsights import AdsInsights
 
-
+import xmlrpc.client #ODOO
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Executive Intelligence System", page_icon="📈", layout="wide")
@@ -32,6 +32,44 @@ st.markdown("""
     .stPlotlyChart { margin-bottom: 40px; }
     </style>
     """, unsafe_allow_html=True)
+
+
+
+
+@st.cache_data(ttl=3600)
+def get_odoo_crm_data():
+    # Credentials from st.secrets
+    url = st.secrets["ODOO_URL"]
+    db = st.secrets["ODOO_DB"]
+    username = st.secrets["ODOO_USER"]
+    api_key = st.secrets["ODOO_API_KEY"] # This is your API Key
+
+    try:
+        common = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/common')
+        uid = common.authenticate(db, username, api_key, {})
+        models = xmlrpc.client.ServerProxy(f'{url}/xmlrpc/2/object')
+
+        # 1. Fetch CRM Leads/Opportunities
+        # Fields: name, probability (conversion chance), expected_revenue, stage, and source
+        leads_data = models.execute_kw(db, uid, api_key, 'crm.lead', 'search_read', 
+            [[('active', '=', True)]], 
+            {'fields': ['name', 'expected_revenue', 'probability', 'stage_id', 'create_date', 'type', 'utm_source_id']})
+        
+        df_leads = pd.DataFrame(leads_data)
+        
+        # 2. Fetch Invoiced Revenue (Real Finance)
+        # We look for posted invoices to see actual cash flow
+        invoice_data = models.execute_kw(db, uid, api_key, 'account.move', 'search_read',
+            [[('state', '=', 'posted'), ('move_type', '=', 'out_invoice')]],
+            {'fields': ['amount_total', 'invoice_date', 'payment_state']})
+        
+        df_revenue = pd.DataFrame(invoice_data)
+        
+        return df_leads, df_revenue
+    except Exception as e:
+        st.error(f"Odoo Connection Failed: {e}")
+        return pd.DataFrame(), pd.DataFrame()
+        
 
 # Initialize FB API
 def init_fb_api():
@@ -174,7 +212,7 @@ st.sidebar.image(
 )
 
 st.sidebar.title("Main Menu")
-page = st.sidebar.selectbox("Go to:", ["🏠 Home", "📊 AO Dashboard", "📧 Mail Tracking", "🌐 Google Analytics", "📱 Meta Ads"])
+page = st.sidebar.selectbox("Go to:", ["🏠 Home", "📊 AO Dashboard", "📧 Mail Tracking", "🌐 Google Analytics", "📱 Meta Ads","💰 Financial Impact"])
 
 # --- PAGE 1: HOME ---
 if page == "🏠 Home":
@@ -372,6 +410,47 @@ elif page == "📱 Meta Ads":
                 st.dataframe(df_fb, use_container_width=True, hide_index=True)
         else:
             st.info("No active ads found for this period.")
+
+elif page == "💰 Financial Impact":
+    st.title("💰 Finance & ROI Executive Overview")
+    
+    df_leads, df_revenue = get_odoo_crm_data()
+    
+    if not df_leads.empty:
+        # Layout: Top Line Metrics
+        c1, c2, c3 = st.columns(3)
+        
+        total_pipeline = df_leads['expected_revenue'].sum()
+        actual_revenue = df_revenue['amount_total'].sum()
+        
+        c1.metric("Pipeline Value (Expected)", f"${total_pipeline:,.2f}")
+        c2.metric("Actual Revenue (Invoiced)", f"${actual_revenue:,.2f}")
+        
+        # Calculate ROI if you have Meta Spend data
+        # Assuming you call get_fb_ads_data() here
+        # total_spend = df_fb['spend'].sum()
+        # roi = (actual_revenue - total_spend) / total_spend
+        # c3.metric("Global ROI", f"{roi*100:.1f}%")
+
+        st.divider()
+
+        # Visualization: CRM Pipeline by Stage
+        st.subheader("Sales Pipeline Funnel")
+        # Extracting stage name from Odoo's (ID, Name) tuple
+        df_leads['stage_name'] = df_leads['stage_id'].apply(lambda x: x[1] if isinstance(x, list) else 'Unknown')
+        
+        fig_funnel = px.funnel(
+            df_leads.groupby('stage_name')['expected_revenue'].sum().reset_index().sort_values('expected_revenue', ascending=False),
+            y='stage_name', x='expected_revenue',
+            title="Revenue Distribution by Sales Stage"
+        )
+        st.plotly_chart(fig_funnel, use_container_width=True)
+
+        with st.expander("🔍 View Odoo Lead Details"):
+            st.dataframe(df_leads, use_container_width=True)
+    else:
+        st.info("No CRM data found or connection not configured.")
+
 
 # --- PAGE 4: GOOGLE ANALYTICS (WITH FILTERS) ---
 elif page == "🌐 Google Analytics":
