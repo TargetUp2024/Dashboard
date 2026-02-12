@@ -10,6 +10,12 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import requests
 
+from facebook_business.api import FacebookAdsApi
+from facebook_business.adobjects.adaccount import AdAccount
+from facebook_business.adobjects.adsinsights import AdsInsights
+
+
+
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Executive Intelligence System", page_icon="📈", layout="wide")
 
@@ -26,6 +32,43 @@ st.markdown("""
     .stPlotlyChart { margin-bottom: 40px; }
     </style>
     """, unsafe_allow_html=True)
+
+# Initialize FB API
+def init_fb_api():
+    FacebookAdsApi.init(
+        access_token=st.secrets["FB_ACCESS_TOKEN"]
+    )
+
+@st.cache_data(ttl=3600)
+def get_fb_ads_data(start_date, end_date):
+    init_fb_api()
+    account = AdAccount(st.secrets["FB_AD_ACCOUNT_ID"])
+    
+    fields = [
+        AdsInsights.Field.ad_name,
+        AdsInsights.Field.impressions,
+        AdsInsights.Field.clicks,
+        AdsInsights.Field.spend,
+        AdsInsights.Field.cpc,
+        AdsInsights.Field.ctr,
+    ]
+    
+    params = {
+        'level': 'ad',
+        'time_range': {
+            'since': start_date.strftime('%Y-%m-%d'),
+            'until': end_date.strftime('%Y-%m-%d'),
+        },
+    }
+    
+    insights = account.get_insights(fields=fields, params=params)
+    df = pd.DataFrame(insights)
+    
+    # Ensure numeric types
+    for col in ['spend', 'impressions', 'clicks', 'cpc', 'ctr']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    return df
 
 # --- CLIENT INITIALIZATION ---
 def get_ga_client():
@@ -126,7 +169,7 @@ st.sidebar.image(
 )
 
 st.sidebar.title("Main Menu")
-page = st.sidebar.selectbox("Go to:", ["🏠 Home", "📊 AO Dashboard", "📧 Mail Tracking", "🌐 Google Analytics"])
+page = st.sidebar.selectbox("Go to:", ["🏠 Home", "📊 AO Dashboard", "📧 Mail Tracking", "🌐 Google Analytics", "📱 Meta Ads"])
 
 # --- PAGE 1: HOME ---
 if page == "🏠 Home":
@@ -284,6 +327,46 @@ elif page == "📧 Mail Tracking":
     with st.expander("🔍 View Raw Mailing Database"):
         st.dataframe(df_m_filtered, use_container_width=True, hide_index=True)
 
+elif page == "📱 Meta Ads":
+    st.title("📱 Meta Ads Performance")
+    
+    # Sidebar Filters
+    st.sidebar.divider()
+    st.sidebar.header("🗓️ Ads Date Filter")
+    today = datetime.now().date()
+    fb_range = st.sidebar.date_input("Select Range", value=(today - timedelta(days=7), today))
+    
+    if isinstance(fb_range, tuple) and len(fb_range) == 2:
+        df_fb = get_fb_ads_data(fb_range[0], fb_range[1])
+        
+        if not df_fb.empty:
+            # --- TOP METRICS ---
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total Spend", f"${df_fb['spend'].sum():,.2f}")
+            m2.metric("Impressions", f"{int(df_fb['impressions'].sum()):,}")
+            m3.metric("Clicks", f"{int(df_fb['clicks'].sum()):,}")
+            m4.metric("Avg CPC", f"${df_fb['spend'].sum()/df_fb['clicks'].sum():,.2f}" if df_fb['clicks'].sum() > 0 else "$0")
+            
+            st.divider()
+            
+            # --- CHARTS ---
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                st.subheader("Spend by Ad")
+                fig_spend = px.bar(df_fb.sort_values("spend"), x="spend", y="ad_name", orientation='h', template="plotly_white")
+                st.plotly_chart(fig_spend, use_container_width=True)
+                
+            with col_b:
+                st.subheader("Clicks vs Impressions")
+                fig_scatter = px.scatter(df_fb, x="impressions", y="clicks", size="spend", hover_name="ad_name", template="plotly_white")
+                st.plotly_chart(fig_scatter, use_container_width=True)
+                
+            # --- RAW DATA ---
+            with st.expander("🔍 View Detailed Ad Breakdown"):
+                st.dataframe(df_fb, use_container_width=True, hide_index=True)
+        else:
+            st.info("No active ads found for this period.")
 
 # --- PAGE 4: GOOGLE ANALYTICS (WITH FILTERS) ---
 elif page == "🌐 Google Analytics":
